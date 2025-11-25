@@ -3,7 +3,6 @@ package com.example.comic_Market
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,16 +18,11 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
-import androidx.compose.ui.platform.isDebugInspectorInfoEnabled
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -72,10 +66,10 @@ fun ComicMarketAppContent(navController: NavHostController, drawerState: DrawerS
         Scaffold { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = "table",
+                startDestination = "map",
                 modifier = Modifier.padding(innerPadding)
             ) {
-                composable("table") { TableScreen() }
+                composable("table") { TableScreenContainer() }
                 composable("map") { MapScreen(onNavigateToTable = { navController.navigate("table") }) }
             }
         }
