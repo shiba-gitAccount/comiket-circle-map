@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
 @Composable
-fun MapScreen(onNavigateToTable: () -> Unit) {
+fun MapScreen(appViewModel: AppViewModel, onNavigateToTable: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(Color.LightGray), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = "Map Screen", style = MaterialTheme.typography.headlineSmall)
         Button(onClick = onNavigateToTable) {

@@ -1,5 +1,6 @@
 package com.example.comic_Market
 
+import android.icu.text.Transliterator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateDpAsState
@@ -10,16 +11,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,8 +32,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,165 +46,116 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.System.currentTimeMillis
+import kotlin.math.absoluteValue
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 @Composable
-fun TableScreenContainer() {
-    val verticalScroll = rememberScrollState()
-    val horizontalScroll = rememberScrollState()
-    var lastScroll by remember { mutableStateOf(0) }
-    val threshold = 100
-    var NavBarsVisible = remember { Visible(true) }
-    LaunchedEffect(verticalScroll.value) {
-        val delta = verticalScroll.value - lastScroll
-        NavBarsVisible.update(delta)
-        lastScroll = verticalScroll.value
-    }
-    TableScreenContent(verticalScroll = verticalScroll, horizontalScroll = horizontalScroll, NavBarsVisible = NavBarsVisible.value)
-}
-
-//fun createEmptyTable(rowCount: Int, colCount: Int): List<MutableList<String>> {
-//    return List(rowCount) {
-//        mutableStateListOf(*Array(colCount) { "" })
-//    }
-//}
-
-@Composable
-fun TableScreenContent(verticalScroll: ScrollState, horizontalScroll: ScrollState, NavBarsVisible: Boolean) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        TableContent()
-        TableHeader(isVisible = NavBarsVisible)
-        TableFooter(isVisible = NavBarsVisible)
+fun TableScreenContainer(appViewModel: AppViewModel) {
+    CompositionLocalProvider(
+        LocalAppViewModel provides appViewModel
+    ) {
+        TableScreenContent()
     }
 }
 @Composable
-fun TableContent() {
-    val rowCount: Int = 300
-    val colCount: Int = 12
-    val cellWidth: Dp = 90.dp
-    val cellHeight: Dp = 50.dp
-    // Canvas 全体のサイズ
-    val contentWidth = cellWidth * colCount
-    val contentHeight = cellHeight * rowCount
+fun TableScreenContent() {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = { TopBar() }
+    ) { innerPadding ->
+        TableContent(innerPadding)
+    }
+}
+@Composable
+fun TableContent(innerPadding: PaddingValues) {
+    val cfg = TableConfig()
+    Box(Modifier
+        .background(Color.White)
+        .fillMaxSize()
+        .padding(innerPadding)
+) {
+        DrawTableCanvas(cfg)
+    }
+}
+
+
+
+data class TableConfig(
+    val rows: Int = 300,
+    val cols: Int = 12,
+    val cellWidth: Dp = 80.dp,
+    val cellHeight: Dp = 25.dp,
+    val contentWidth: Dp = cellWidth * cols,
+    val contentHeight: Dp = cellHeight * rows
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TopBar(appViewModel: AppViewModel = LocalAppViewModel.current) {
+    TopAppBar(
+        title = { Text("My Screen") },
+        modifier = Modifier.height(50.dp).offset(y =  appViewModel.topBarHeight.value)
+    )
+}
+
+
+@Composable
+fun DrawTableCanvas(cfg: TableConfig, appViewModel: AppViewModel = LocalAppViewModel.current) {
     val scope = rememberCoroutineScope()
-    val offsetX = remember { Animatable(0f) }
-    val offsetY = remember { Animatable(0f) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White)
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitFirstDown()
-                        val startOffsetX = offsetX.value
-                        val startOffsetY = offsetY.value
-
-                        // ドラッグ処理（オフセット更新）
-                        val result = handleDrag(down, startOffsetX, startOffsetY, offsetX, offsetY, scope)
-
-                        // 慣性スクロール開始
-                        startInertialScroll(offsetX, offsetY, result.velocityX, result.velocityY, scope)
-                    }
+    var boxSize = remember{ IntSize.Zero }
+    Canvas(modifier = Modifier
+        .onSizeChanged({ boxSize = it})
+        .graphicsLayer(
+            scaleX = appViewModel.zoomScale.value,
+            scaleY = appViewModel.zoomScale.value,
+            transformOrigin = TransformOrigin(0f,0f)
+        )
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    var event = awaitPointerEvent()
+                    var pointers = event.changes.filter { it.pressed }
+                    if (pointers.size <= 0) continue
+                    scrollAndZoom(pointers, maxSize = Size((boxSize.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx()), (boxSize.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx())), appViewModel = appViewModel, scope = scope)
                 }
             }
-    ) {
-        DrawTableCanvas(
-            rowCount = rowCount,
-            colCount = colCount,
-            cellWidth = cellWidth,
-            cellHeight = cellHeight,
-            contentWidth = contentWidth,
-            contentHeight = contentHeight,
-            offsetX = offsetX.value,
-            offsetY = offsetY.value
-        )
-    }
-}
-
-
-
-@Composable
-fun TableHeader(isVisible:  Boolean) {
-    val targetOffset by animateDpAsState(
-        targetValue = if (isVisible) 0.dp else (-56).dp
-    )
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .offset(y = targetOffset)
-            .background(Color.LightGray),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("ヘッダー")
-    }
-}
-
-@Composable
-fun BoxScope.TableFooter(isVisible:  Boolean) {
-    val targetOffset by animateDpAsState(
-        targetValue = if (isVisible) 0.dp else 56.dp
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .align(Alignment.BottomCenter)
-            .offset(y = targetOffset)
-            .background(Color.LightGray),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("フッター")
-    }
-}
-
-class Visible(initial: Boolean = true) {
-    var value by mutableStateOf(initial)
-        private set
-    fun update(delta: Int) {
-        when {
-            delta > 20 -> value = false
-            delta < -20 -> value = true
         }
-    }
-}
+        .size(cfg.contentWidth, cfg.contentHeight)
+        .offset { IntOffset(minmax(appViewModel.tableOffset.value.x,boxSize.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx() ).toInt(),minmax(appViewModel.tableOffset.value.y,boxSize.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx()).toInt()) }
+    ) {
+        val cellWidthPx = cfg.cellWidth.toPx()
+        val cellHeightPx = cfg.cellHeight.toPx()
 
-@Composable
-fun DrawTableCanvas(
-    rowCount: Int,
-    colCount: Int,
-    cellWidth: Dp,
-    cellHeight: Dp,
-    contentWidth: Dp,
-    contentHeight: Dp,
-    offsetX: Float = 0f,
-    offsetY: Float = 0f
-) {
-    Canvas(modifier = Modifier.size(contentWidth,contentHeight).offset { IntOffset(offsetX.toInt(), offsetY.toInt()) }) {
-        val cellWidthPx = cellWidth.toPx()
-        val cellHeightPx = cellHeight.toPx()
-
-        for (row in 0 until rowCount) {
-            for (col in 0 until colCount) {
+        for (row in 0 until cfg.rows) {
+            for (col in 0 until cfg.cols) {
 
                 val left = col * cellWidthPx
                 val top = row * cellHeightPx
@@ -232,78 +192,56 @@ fun DrawTableCanvas(
                     drawText(text, textX, textY, paint)
                 }
             }
+
         }
     }
 }
 
-data class DragResult(
-    val velocityX: Float,
-    val velocityY: Float
-)
-
-suspend fun AwaitPointerEventScope.handleDrag(
-    down: PointerInputChange,
-    startOffsetX: Float,
-    startOffsetY: Float,
-    offsetX: Animatable<Float, AnimationVector1D>,
-    offsetY: Animatable<Float, AnimationVector1D>,
-    scope: CoroutineScope
-): DragResult {
-
-    var lastPos = down.position
-    var lastTime = System.currentTimeMillis()
-    var vx = 0f
-    var vy = 0f
+suspend fun AwaitPointerEventScope.scrollAndZoom(pointers: List<PointerInputChange> , maxSize: Size, appViewModel: AppViewModel, scope: CoroutineScope) {
+    var lastPos = centerPosition(pointers = pointers); var lastTime = System.currentTimeMillis()
+    var vx = 0f; var vy = 0f;
 
     while (true) {
-        val event = awaitPointerEvent()
-        val change = event.changes.first()
+        val change = awaitPointerEvent().changes.first()
         if (!change.pressed) break
 
-        val nowPos = change.position
-        val nowTime = System.currentTimeMillis()
-        val dx = nowPos.x - down.position.x
-        val dy = nowPos.y - down.position.y
-        val frameDx = nowPos.x - lastPos.x
-        val frameDy = nowPos.y - lastPos.y
+        val nowPos = change.position; val nowTime = System.currentTimeMillis()
+        val frameDx = nowPos.x - lastPos.x; val frameDy = nowPos.y - lastPos.y
+        val currentOffset = Offset(appViewModel.tableOffset.value.x + frameDx,appViewModel.tableOffset.value.y + frameDy)
         val dt = nowTime - lastTime
 
+        appViewModel.moveTopBarBy(frameDy.toDp() * appViewModel.zoomScale.value)
         scope.launch {
-            offsetX.snapTo(startOffsetX + dx)
-            offsetY.snapTo(startOffsetY + dy)
+            appViewModel.snapTableOffset(clamp(currentOffset, maxSize))
         }
 
-        vx = if (dt > 0) (frameDx / dt) * 1000f else 0f   // px/s
-        vy = if (dt > 0) (frameDy / dt) * 1000f else 0f
+
+        vx = computeVelocity(frameDx, dt)
+        vy = computeVelocity(frameDy, dt)
 
         lastPos = nowPos
         lastTime = nowTime
         change.consume()
     }
-
-    // 仮の速度（まだ簡易）
-    return DragResult(
-        velocityX = (vx) ,
-        velocityY = (vy)
-    )
+    scope.launch {
+        appViewModel.animateTableOffsetDecay(Offset(vx, vy))
+    }
 }
 
+fun clamp(offset: Offset, maxSize: Size): Offset {
+    return Offset(offset.x.coerceIn(maxSize.width,0f),offset.y.coerceIn(maxSize.height,0f))
+}
 
-fun startInertialScroll(
-    offsetX: Animatable<Float, AnimationVector1D>,
-    offsetY: Animatable<Float, AnimationVector1D>,
-    velocityX: Float,
-    velocityY: Float,
-    scope: CoroutineScope
-) {
-    val decay = exponentialDecay<Float>()
+fun computeVelocity(delta: Float, dt: Long) = if (dt > 0) delta / dt * 1000f else 0f
+fun minmax(middle: Float, minimum: Float) : Float {
+    return min(0f,max(middle,minimum))
+}
+fun centerPosition(pointers: List<PointerInputChange>) : Offset {
+    return (pointers.fold(Offset.Zero) { acc, change -> acc + change.position }) / pointers.size.toFloat()
+}
 
-    scope.launch {
-        offsetX.animateDecay(velocityX, decay)
-    }
-    scope.launch {
-        offsetY.animateDecay(velocityY, decay)
-    }
+operator fun Offset.plus(other: Offset): Offset {
+    return Offset(this.x + other.x, this.y + other.y)
 }
 
 
