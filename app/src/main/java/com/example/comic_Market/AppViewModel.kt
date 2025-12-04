@@ -1,5 +1,6 @@
 package com.example.comic_Market
 
+import androidx.annotation.RestrictTo
 import androidx.compose.animation.Animatable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -28,7 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 val LocalAppViewModel = staticCompositionLocalOf<AppViewModel> {
@@ -44,18 +48,15 @@ class AppViewModel : ViewModel() {
     private val _tableOffset = Animatable(Offset(0f,0f), Offset.VectorConverter)
     val tableOffset: State<Offset>
         get() = _tableOffset.asState()
-    suspend fun snapTableOffset(to: Offset) {
-        _tableOffset.snapTo(to)
+    fun snapTableOffset(to: Offset) {
+        viewModelScope.launch{
+            _tableOffset.snapTo(to)
+        }
     }
-    suspend fun animateTableOffsetDecay(
-        velocity: Offset,
-    ) {
+    suspend fun animateTableOffsetDecay(velocity: Offset) {
         _tableOffset.animateDecay(velocity, animationSpec = exponentialDecay(0.25f))
     }
-    var tableMaxSize = mutableStateOf(Size.Zero)
-    fun saveMaxSize(maxSize: Size) {
-        tableMaxSize.value = maxSize
-    }
+
 
     val topBarHeight = mutableStateOf(0.dp)
     fun moveTopBarBy(dy: Dp) {
@@ -63,9 +64,8 @@ class AppViewModel : ViewModel() {
     }
 
     val zoomScale = mutableFloatStateOf(1f)
+    fun changeScale(newScale: Float) {
+        zoomScale.value = min(10f,max(0.5f,newScale))
+    }
 
-}
-
-operator fun Size.plus(other: Size): Size {
-    return Size(this.width + other.width, this.height + other.height)
 }

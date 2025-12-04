@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
@@ -95,12 +96,22 @@ fun TableScreenContent() {
     }
 }
 @Composable
-fun TableContent(innerPadding: PaddingValues) {
+fun TableContent(innerPadding: PaddingValues,appViewModel: AppViewModel = LocalAppViewModel.current) {
     val cfg = TableConfig()
+    val scope = rememberCoroutineScope()
     Box(Modifier
         .background(Color.White)
         .fillMaxSize()
         .padding(innerPadding)
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val pointers = awaitPointerEvent().changes.filter { it.pressed }
+                    if (pointers.isEmpty()) continue
+                    scrollAndZoom(pointers, maxSize = Size((this.size.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx()), (this.size.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx())), appViewModel = appViewModel, scope = scope)
+                }
+            }
+        }
 ) {
         DrawTableCanvas(cfg)
     }
@@ -129,27 +140,17 @@ fun TopBar(appViewModel: AppViewModel = LocalAppViewModel.current) {
 
 @Composable
 fun DrawTableCanvas(cfg: TableConfig, appViewModel: AppViewModel = LocalAppViewModel.current) {
-    val scope = rememberCoroutineScope()
     var boxSize = remember{ IntSize.Zero }
     Canvas(modifier = Modifier
-        .onSizeChanged({ boxSize = it})
+        .onSizeChanged { boxSize = it }
         .graphicsLayer(
             scaleX = appViewModel.zoomScale.value,
             scaleY = appViewModel.zoomScale.value,
             transformOrigin = TransformOrigin(0f,0f)
         )
-        .pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    var event = awaitPointerEvent()
-                    var pointers = event.changes.filter { it.pressed }
-                    if (pointers.size <= 0) continue
-                    scrollAndZoom(pointers, maxSize = Size((boxSize.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx()), (boxSize.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx())), appViewModel = appViewModel, scope = scope)
-                }
-            }
-        }
-        .size(cfg.contentWidth, cfg.contentHeight)
         .offset { IntOffset(minmax(appViewModel.tableOffset.value.x,boxSize.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx() ).toInt(),minmax(appViewModel.tableOffset.value.y,boxSize.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx()).toInt()) }
+        .size(cfg.contentWidth, cfg.contentHeight)
+
     ) {
         val cellWidthPx = cfg.cellWidth.toPx()
         val cellHeightPx = cfg.cellHeight.toPx()
@@ -197,31 +198,49 @@ fun DrawTableCanvas(cfg: TableConfig, appViewModel: AppViewModel = LocalAppViewM
     }
 }
 
-suspend fun AwaitPointerEventScope.scrollAndZoom(pointers: List<PointerInputChange> , maxSize: Size, appViewModel: AppViewModel, scope: CoroutineScope) {
-    var lastPos = centerPosition(pointers = pointers); var lastTime = System.currentTimeMillis()
+suspend fun AwaitPointerEventScope.scrollAndZoom(initialPointers: List<PointerInputChange>, maxSize: Size, appViewModel: AppViewModel, scope: CoroutineScope) {
+    val initialScale = appViewModel.zoomScale.value
+    var lastPos = centerPosition(initialPointers)/ initialScale; var lastTime = System.currentTimeMillis()
     var vx = 0f; var vy = 0f;
+    var initialDistance: Float? = null; var prevPointerCount = 0;
+
 
     while (true) {
-        val change = awaitPointerEvent().changes.first()
-        if (!change.pressed) break
+        val pointers = awaitPointerEvent().changes.filter { it.pressed }
+        if (pointers.isEmpty()) {
+            break
+        }
 
-        val nowPos = change.position; val nowTime = System.currentTimeMillis()
+        val nowPos = centerPosition(pointers = pointers)/ appViewModel.zoomScale.value
+        if(prevPointerCount != pointers.size) lastPos = nowPos
+
+        if (pointers.size > 1) {
+            val currDistance = (pointers[0].position - pointers[1].position).getDistance()
+            if (initialDistance == null){
+                initialDistance = currDistance
+            } else {
+                appViewModel.changeScale(initialScale * (currDistance / initialDistance))
+            }
+        }else initialDistance = null
+
+
+        val nowTime = System.currentTimeMillis()
+
         val frameDx = nowPos.x - lastPos.x; val frameDy = nowPos.y - lastPos.y
         val currentOffset = Offset(appViewModel.tableOffset.value.x + frameDx,appViewModel.tableOffset.value.y + frameDy)
         val dt = nowTime - lastTime
 
         appViewModel.moveTopBarBy(frameDy.toDp() * appViewModel.zoomScale.value)
-        scope.launch {
-            appViewModel.snapTableOffset(clamp(currentOffset, maxSize))
-        }
+
+
+        appViewModel.snapTableOffset(clamp(currentOffset, maxSize))
 
 
         vx = computeVelocity(frameDx, dt)
         vy = computeVelocity(frameDy, dt)
-
+        prevPointerCount = pointers.size
         lastPos = nowPos
         lastTime = nowTime
-        change.consume()
     }
     scope.launch {
         appViewModel.animateTableOffsetDecay(Offset(vx, vy))
@@ -238,10 +257,6 @@ fun minmax(middle: Float, minimum: Float) : Float {
 }
 fun centerPosition(pointers: List<PointerInputChange>) : Offset {
     return (pointers.fold(Offset.Zero) { acc, change -> acc + change.position }) / pointers.size.toFloat()
-}
-
-operator fun Offset.plus(other: Offset): Offset {
-    return Offset(this.x + other.x, this.y + other.y)
 }
 
 
