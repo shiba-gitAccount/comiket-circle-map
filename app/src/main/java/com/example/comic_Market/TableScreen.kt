@@ -133,7 +133,7 @@ data class TableConfig(
 fun TopBar(appViewModel: AppViewModel = LocalAppViewModel.current) {
     TopAppBar(
         title = { Text("My Screen") },
-        modifier = Modifier.height(50.dp).offset(y =  appViewModel.topBarHeight.value)
+        modifier = Modifier.height(50.dp).offset{ IntOffset(x = 0, y =  max(appViewModel.topBarHeight.value.toPx(),min(0f,appViewModel.tableOffset.value.y)).toInt()) }
     )
 }
 
