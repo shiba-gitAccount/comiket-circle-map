@@ -68,4 +68,14 @@ class AppViewModel : ViewModel() {
         zoomScale.value = min(10f,max(0.5f,newScale))
     }
 
+    private val _circles = MutableStateFlow(generateDummyCircles())
+    val circles = _circles.asStateFlow()
+
+    fun canvasOffset(topBarHeightPx: Float): IntOffset {
+        val x = (minmax(tableOffset.value.x, -2000f) * zoomScale.value).toInt()
+        val yLogical = tableOffset.value.y * zoomScale.value
+        val y = max(topBarHeightPx, min(0f, yLogical)).toInt()
+        return IntOffset(x, y)
+    }
+
 }

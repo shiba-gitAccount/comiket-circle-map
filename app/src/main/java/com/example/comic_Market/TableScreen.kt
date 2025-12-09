@@ -51,6 +51,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,12 +61,16 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.modifier.modifierLocalMapOf
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
@@ -73,6 +78,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.lang.System.currentTimeMillis
+import java.net.URL
+import kotlin.Boolean
 import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
@@ -87,33 +94,83 @@ fun TableScreenContainer(appViewModel: AppViewModel) {
     }
 }
 @Composable
-fun TableScreenContent() {
+fun TableScreenContent(appViewModel: AppViewModel = LocalAppViewModel.current) {
+    val topOffset = with(LocalDensity.current) { calcTopOffset(appViewModel = appViewModel, heightPx = appViewModel.topBarHeight.value.toPx()) }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = { TopBar() }
+        topBar = { TopBar(topOffset) }
     ) { innerPadding ->
-        TableContent(innerPadding)
+        TableContent(innerPadding,topOffset,appViewModel)
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TableContent(innerPadding: PaddingValues,appViewModel: AppViewModel = LocalAppViewModel.current) {
+fun TopBar(topOffset: Int, appViewModel: AppViewModel = LocalAppViewModel.current) {
+    TopAppBar(
+        title = { Text("My Screen") },
+        modifier = Modifier.height(50.dp).offset{ IntOffset(x = 0, y = topOffset) }
+    )
+}
+fun calcTopOffset(heightPx: Float, appViewModel: AppViewModel): Int{
+    return max(
+        heightPx,
+        min(0f,appViewModel.tableOffset.value.y * appViewModel.zoomScale.value)
+    ).toInt()
+}
+
+@Composable
+fun TableContent(innerPadding: PaddingValues, topOffset: Int, appViewModel: AppViewModel) {
     val cfg = TableConfig()
     val scope = rememberCoroutineScope()
-    Box(Modifier
-        .background(Color.White)
-        .fillMaxSize()
-        .padding(innerPadding)
-        .pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    val pointers = awaitPointerEvent().changes.filter { it.pressed }
-                    if (pointers.isEmpty()) continue
-                    scrollAndZoom(pointers, maxSize = Size((this.size.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx()), (this.size.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx())), appViewModel = appViewModel, scope = scope)
+    var maxSize = remember { mutableStateOf(Size.Zero) }
+    val conWidthPx = with(LocalDensity.current) { cfg.contentWidth.toPx() }
+    val conHeightPx = with(LocalDensity.current) { cfg.contentHeight.toPx() }
+    Box(modifier = Modifier.padding(innerPadding)){
+        val offset = calcOffset(appViewModel, maxSize.value)
+        DrawColTag(offset, topOffset, appViewModel)
+        DrawRowNum(offset, topOffset, appViewModel)
+        Box(Modifier
+            .background(Color.White)
+            .fillMaxSize()
+            .offset({IntOffset(x = (40.dp.toPx() * appViewModel.zoomScale.value).toInt(),y = (25.dp.toPx() * appViewModel.zoomScale.value).toInt())})
+            .onSizeChanged { maxSize.value = calcMaxSize(it, appViewModel, conWidthPx, conHeightPx) }
+            .zIndex(0f)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val pointers = awaitPointerEvent().changes.filter { it.pressed }
+                        if (pointers.isEmpty()) continue
+                        scrollAndZoom(pointers, maxSize = maxSize.value, appViewModel = appViewModel, scope = scope)
+                    }
                 }
             }
+        ) {
+            DrawTableCanvas(cfg, offset)
         }
-) {
-        DrawTableCanvas(cfg)
+    }
+}
+
+@Composable
+fun DrawColTag(offset: IntOffset, topOffset: Int, appViewModel: AppViewModel) {
+    val tags = listOf("CB", "ユーザー", "曜日", "ホール", "スペース", "サークル名", "作者名", "Twitter", "備考", "値段", "担当")
+    Canvas(modifier = Modifier.zIndex(2f).offset{ IntOffset(x = 0, y = topOffset) }){ drawCell(left = 0f, top = 0f, width = 40.dp.toPx() * appViewModel.zoomScale.value, height = 25.dp.toPx() * appViewModel.zoomScale.value, text = "") }
+    Canvas(modifier = Modifier.zIndex(1f).graphicsLayer(scaleX = appViewModel.zoomScale.value, scaleY = appViewModel.zoomScale.value, transformOrigin = TransformOrigin(0f, 0f)).offset({ IntOffset( x = offset.x + 40.dp.toPx().toInt(), y = (topOffset / appViewModel.zoomScale.value).toInt() )})){
+        val colWidthsPx = columnWidthsDp.map { it.dp.toPx() }
+        val cumulative = colWidthsPx.runningFold(0f) { acc, v -> acc + v }
+        tags.forEachIndexed { col,text ->
+            drawCell(left = cumulative[col], top = 0f, width = colWidthsPx[col], height = 25.dp.toPx(), text = text)
+        }
+    }
+}
+
+@Composable
+fun DrawRowNum(offset: IntOffset, topOffset: Int, appViewModel: AppViewModel) {
+    Canvas(modifier = Modifier.graphicsLayer(scaleX = appViewModel.zoomScale.value, scaleY = appViewModel.zoomScale.value, transformOrigin = TransformOrigin(0f, 0f)).zIndex(1f).offset({ IntOffset( x = 0, y = offset.y + 25.dp.toPx().toInt()) })){
+        val cellHeight = 25.dp.toPx()
+        for(row in 0 until 300){
+            drawCell(left = 0f, top = row * cellHeight, width = 40.dp.toPx(), height = 25.dp.toPx(), text = (row+1).toString())
+        }
     }
 }
 
@@ -121,82 +178,149 @@ fun TableContent(innerPadding: PaddingValues,appViewModel: AppViewModel = LocalA
 
 data class TableConfig(
     val rows: Int = 300,
-    val cols: Int = 12,
-    val cellWidth: Dp = 80.dp,
     val cellHeight: Dp = 25.dp,
-    val contentWidth: Dp = cellWidth * cols,
-    val contentHeight: Dp = cellHeight * rows
+    val contentWidth: Dp = (columnWidthsDp.reduce { acc, i -> acc + i } +40).dp,
+    val contentHeight: Dp = cellHeight * rows + 25.dp
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+
+
+
 @Composable
-fun TopBar(appViewModel: AppViewModel = LocalAppViewModel.current) {
-    TopAppBar(
-        title = { Text("My Screen") },
-        modifier = Modifier.height(50.dp).offset{ IntOffset(x = 0, y =  max(appViewModel.topBarHeight.value.toPx(),min(0f,appViewModel.tableOffset.value.y)).toInt()) }
+fun DrawTableCanvas(cfg: TableConfig, offset: IntOffset, appViewModel: AppViewModel = LocalAppViewModel.current) {
+    val zoom = appViewModel.zoomScale.value
+    Canvas(
+        modifier = Modifier
+            .graphicsLayer(
+                scaleX = zoom,
+                scaleY = zoom,
+                transformOrigin = TransformOrigin(0f, 0f)
+            )
+            .offset { offset }
+            .size(cfg.contentWidth, cfg.contentHeight)
+    ) {
+        drawTable(appViewModel.circles.value)
+    }
+}
+
+private fun calcOffset(app: AppViewModel, maxSize: Size): IntOffset {
+    val offX = minmax(
+        app.tableOffset.value.x,
+        maxSize.width
+    )
+    val offY = minmax(
+        app.tableOffset.value.y,
+        maxSize.height
+    )
+    return IntOffset(offX.toInt(), offY.toInt())
+}
+
+private fun calcMaxSize(boxSize: IntSize, appViewModel: AppViewModel, width: Float, height: Float): Size{
+    return Size(boxSize.width / appViewModel.zoomScale.value - width, boxSize.height / appViewModel.zoomScale.value - height)
+}
+
+private fun DrawScope.drawTable(
+    circles: List<Circle>
+) {
+    val colWidthsPx = columnWidthsDp.map { it.dp.toPx() }
+    val rowHeightPx = 25.dp.toPx()
+
+    circles.forEachIndexed { rowIndex, circle ->
+        drawCircleRow(circle, rowIndex, colWidthsPx, rowHeightPx)
+    }
+}
+
+private fun DrawScope.drawCircleRow(
+    circle: Circle,
+    row: Int,
+    colWidths: List<Float>,
+    rowHeight: Float
+) {
+    var left = 0f
+    val top = row * rowHeight
+
+    val values = circleToDisplayList(circle)
+
+    values.forEachIndexed { col, text ->
+        val w = colWidths[col]
+
+        drawCell( left, top, w, rowHeight, text)
+
+        left += w
+    }
+}
+
+private fun DrawScope.drawCell(
+    left: Float,
+    top: Float,
+    width: Float,
+    height: Float,
+    text: String?,
+){
+    drawCellBackground(left, top, width, height)
+    drawCellBorder(left, top, width, height)
+    drawCellText(text, left, top, height)
+}
+
+private fun circleToDisplayList(circle: Circle): List<String?> = listOf(
+    if (circle.check) "✔" else "",
+    circle.user,
+    circle.week?.kanji,
+    circle.hall?.kanji,
+    circle.space,
+    circle.name,
+    circle.writer,
+    circle.twitter.toString(),
+    circle.memo,
+    circle.price.toString(),
+    circle.assign
+)
+
+private fun DrawScope.drawCellBackground(
+    left: Float,
+    top: Float,
+    w: Float,
+    h: Float
+) {
+    drawRect(
+        color = Color(0xFFE0E0E0),
+        topLeft = Offset(left, top),
+        size = Size(w, h)
     )
 }
 
+private fun DrawScope.drawCellBorder(
+    left: Float,
+    top: Float,
+    w: Float,
+    h: Float
+) {
+    drawRect(
+        color = Color.Gray,
+        topLeft = Offset(left, top),
+        size = Size(w, h),
+        style = Stroke(1.5f)
+    )
+}
 
-@Composable
-fun DrawTableCanvas(cfg: TableConfig, appViewModel: AppViewModel = LocalAppViewModel.current) {
-    var boxSize = remember{ IntSize.Zero }
-    Canvas(modifier = Modifier
-        .onSizeChanged { boxSize = it }
-        .graphicsLayer(
-            scaleX = appViewModel.zoomScale.value,
-            scaleY = appViewModel.zoomScale.value,
-            transformOrigin = TransformOrigin(0f,0f)
-        )
-        .offset { IntOffset(minmax(appViewModel.tableOffset.value.x,boxSize.width / appViewModel.zoomScale.value - cfg.contentWidth.toPx() ).toInt(),minmax(appViewModel.tableOffset.value.y,boxSize.height / appViewModel.zoomScale.value - cfg.contentHeight.toPx()).toInt()) }
-        .size(cfg.contentWidth, cfg.contentHeight)
-
-    ) {
-        val cellWidthPx = cfg.cellWidth.toPx()
-        val cellHeightPx = cfg.cellHeight.toPx()
-
-        for (row in 0 until cfg.rows) {
-            for (col in 0 until cfg.cols) {
-
-                val left = col * cellWidthPx
-                val top = row * cellHeightPx
-
-                // 背景
-                drawRect(
-                    color = if (row % 2 == 0) Color(0xFFE0E0E0) else Color(0xFFF5F5F5),
-                    topLeft = Offset(left, top),
-                    size = Size(cellWidthPx, cellHeightPx)
-                )
-
-                // 枠線
-                drawRect(
-                    color = Color.Gray,
-                    topLeft = Offset(left, top),
-                    size = Size(cellWidthPx, cellHeightPx),
-                    style = Stroke(1f)
-                )
-
-                // --- ★ テキスト描画追加 ---
-                drawContext.canvas.nativeCanvas.apply {
-                    val text = "$row, $col"
-
-                    val paint = android.graphics.Paint().apply {
-                        color = android.graphics.Color.BLACK
-                        textSize = 32f        // 固定のpx値（必要なら調整）
-                        isAntiAlias = true
-                    }
-
-                    // 中心に置きたい場合はこういう調整も可能
-                    val textX = left + 10f
-                    val textY = top + cellHeightPx / 2f + 10f
-
-                    drawText(text, textX, textY, paint)
-                }
-            }
-
+private fun DrawScope.drawCellText(
+    text: String?,
+    left: Float,
+    top: Float,
+    cellHeight: Float
+) {
+    drawContext.canvas.nativeCanvas.apply {
+        val textSizePx = with(LocalDensity) { 14.sp.toPx() }
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.BLACK
+            textSize = textSizePx
+            isAntiAlias = true
         }
+        val textY = top + cellHeight * 0.8f
+        drawText(text?: "", left +4f, textY, paint)
     }
 }
+
 
 suspend fun AwaitPointerEventScope.scrollAndZoom(initialPointers: List<PointerInputChange>, maxSize: Size, appViewModel: AppViewModel, scope: CoroutineScope) {
     val initialScale = appViewModel.zoomScale.value
@@ -231,8 +355,6 @@ suspend fun AwaitPointerEventScope.scrollAndZoom(initialPointers: List<PointerIn
         val dt = nowTime - lastTime
 
         appViewModel.moveTopBarBy(frameDy.toDp() * appViewModel.zoomScale.value)
-
-
         appViewModel.snapTableOffset(clamp(currentOffset, maxSize))
 
 
@@ -258,5 +380,12 @@ fun minmax(middle: Float, minimum: Float) : Float {
 fun centerPosition(pointers: List<PointerInputChange>) : Offset {
     return (pointers.fold(Offset.Zero) { acc, change -> acc + change.position }) / pointers.size.toFloat()
 }
+
+private val columnWidthsDp = listOf(
+    25, 60, 30, 30, 50, 100, 100, 72, 300, 60, 60
+)
+
+
+
 
 
