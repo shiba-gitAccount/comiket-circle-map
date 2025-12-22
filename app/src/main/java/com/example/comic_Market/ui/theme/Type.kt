@@ -1,6 +1,7 @@
 package com.example.comic_Market.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -12,8 +13,9 @@ val Typography = Typography(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp,
+        platformStyle = PlatformTextStyle(includeFontPadding = true)
     )
     /* Other default text styles to override
     titleLarge = TextStyle(
