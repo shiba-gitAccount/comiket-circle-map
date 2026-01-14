@@ -221,13 +221,9 @@ private fun circleToDisplayList(circle: Circle): List<String?> = listOf(
     circle.assign
 )
 
-data class TableCell(
-    val key: CircleField,     // どの項目か
-    val display: String?,     // 画面に表示する文字
-    val value: Any?           // 元の型（String, Int, URL, enum etc）
-)
 
-enum class CircleField { CHECK, USER, WEEK, HALL, SPACE, NAME, WRITER, TWITTER, MEMO, PRICE, ASSIGN, }
+enum class Column { CHECK, USER, WEEK, HALL, SPACE, NAME, WRITER, TWITTER, MEMO, PRICE, ASSIGN }
+val columns = Column.values()
 
 private fun DrawScope.drawCellBackground(
     left: Float,

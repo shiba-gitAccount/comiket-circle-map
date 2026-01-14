@@ -35,9 +35,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.coerceIn
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import java.net.URL
 
 val LocalAppViewModel = staticCompositionLocalOf<AppViewModel> {
     error("AppViewModel not provided")
@@ -90,9 +92,64 @@ class AppViewModel : ViewModel() {
     }
 
     private val _circles = MutableStateFlow(generateDummyCircles())
-    val circles = _circles.asStateFlow()
 
+    val circles = _circles.asStateFlow()
     val selectedCell = mutableStateOf<CellPos?>(null)
+    fun cellText(): String {
+        val cell = selectedCell.value ?: return ""
+        val circle = circleAt(cell.row) ?: return ""
+        val column = columnAt(cell.col) ?: return ""
+        return circle.getValue(column)
+    }
+    private fun circleAt(row: Int): Circle? =
+        _circles.value.getOrNull(row)
+
+    private fun columnAt(col: Int): Column? =
+        columns.getOrNull(col)
+
+    fun updateSelectedCellText(newText: String) {
+        val cell = selectedCell.value ?: return
+        val column = columns.getOrNull(cell.col) ?: return
+
+        _circles.update { list ->
+            list.mapIndexed { index, circle ->
+                if (index == cell.row) {
+                    circle.withValue(column, newText)
+                } else {
+                    circle
+                }
+            }
+        }
+    }
+
+    fun Circle.getValue(column: Column): String =
+        when (column) {
+            Column.CHECK   -> check.toString()
+            Column.USER    -> user ?: ""
+            Column.WEEK    -> week?.name ?: ""
+            Column.HALL    -> hall?.name ?: ""
+            Column.SPACE   -> space ?: ""
+            Column.NAME    -> name ?: ""
+            Column.WRITER  -> writer ?: ""
+            Column.TWITTER -> twitter?.toString() ?: ""
+            Column.MEMO    -> memo ?: ""
+            Column.PRICE   -> price?.toString() ?: ""
+            Column.ASSIGN  -> assign ?: ""
+        }
+    fun Circle.withValue(column: Column, newValue: String): Circle =
+        when (column) {
+            Column.CHECK   -> copy(check = newValue.toBoolean())
+            Column.USER    -> copy(user = newValue)
+            Column.WEEK    -> copy(week = Week.valueOf(newValue))
+            Column.HALL    -> copy(hall = Hall.valueOf(newValue))
+            Column.SPACE   -> copy(space = newValue)
+            Column.NAME    -> copy(name = newValue)
+            Column.WRITER  -> copy(writer = newValue)
+            Column.TWITTER -> copy(twitter = runCatching { URL(newValue) }.getOrNull())
+            Column.MEMO    -> copy(memo = newValue)
+            Column.PRICE   -> copy(price = newValue.toIntOrNull())
+            Column.ASSIGN  -> copy(assign = newValue)
+        }
 }
 
 data class CellPos(val row: Int, val col: Int)

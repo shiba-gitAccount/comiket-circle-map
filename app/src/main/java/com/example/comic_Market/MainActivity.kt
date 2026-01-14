@@ -123,19 +123,18 @@ fun ComicMarketAppContent(navController: NavHostController, appViewModel: AppVie
 }
 
 @Composable
-fun BottomBar(navController: NavHostController, appViewModel: AppViewModel) {
-    var text  =  remember { mutableStateOf("") }
+fun BottomBar(navController: NavHostController, appVM: AppViewModel) {
     BottomAppBar(
         Modifier.height(50.dp)
     ) {
-        if(appViewModel.activeEdit.value) {
+        if(appVM.activeEdit.value) {
             Row(
                 modifier = Modifier.background(color = Color.White, shape = CircleShape).border(border = BorderStroke(width = 2.dp, color = Color.Yellow), shape = CircleShape),
             ){
                 BasicTextField(
-                    value = text.value,
+                    value = appVM.cellText(),
                     modifier = Modifier.fillMaxHeight().width(300.dp),
-                    onValueChange = {text.value = it},
+                    onValueChange = { appVM.updateSelectedCellText(it) },
                     singleLine = true,
                     decorationBox = { innerTextField ->
                         Box(
@@ -149,7 +148,10 @@ fun BottomBar(navController: NavHostController, appViewModel: AppViewModel) {
                 Checkbox(
                     
                     checked = true,
-                    onCheckedChange = {appViewModel.editBar(false)},
+                    onCheckedChange = {
+                        appVM.editBar(false)
+                        appVM.selectedCell.value = null
+                    },
                     colors = CheckboxDefaults.colors(Color.Yellow),
                     modifier = Modifier
                         .scale(0.8f)
@@ -211,3 +213,21 @@ fun measureTextWidthInDp(text: String): Float {
     )
     return with(density) { textLayoutResult.size.width.toDp().value }
 }
+
+fun updateCircle(
+    circles: List<Circle>,
+    row: Int,
+    column: Column,
+    newValue: String
+): List<Circle> =
+    circles.mapIndexed { index, circle ->
+        if (index != row) return@mapIndexed circle
+
+        when (column) {
+            Column.NAME -> circle.copy(name = newValue)
+            Column.MEMO -> circle.copy(memo = newValue)
+            Column.SPACE -> circle.copy(space = newValue)
+            Column.PRICE -> circle.copy(price = newValue.toIntOrNull())
+            else -> circle
+        }
+    }
